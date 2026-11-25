@@ -1,6 +1,6 @@
 {
   "name": "@financewiki/obsidian-collab",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "FinanceWiki Yjs collaboration engine and Obsidian plugin",
@@ -17,6 +17,7 @@
     "validate": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "lib0": "0.2.120",
     "y-codemirror.next": "0.3.6",
     "y-indexeddb": "9.0.12",
     "y-webrtc": "10.3.0",

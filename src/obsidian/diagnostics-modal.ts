@@ -14,7 +14,8 @@ export class CollaborationDiagnosticsModal extends Modal {
   private timer: number | undefined;
 
   constructor(app: App, private readonly report: () => DiagnosticReport,
-    private readonly exportSnapshot: (roomId: string) => Promise<string>) {
+    private readonly exportSnapshot: (roomId: string) => Promise<string>,
+    private readonly reconnect: () => void) {
     super(app);
   }
 
@@ -43,6 +44,9 @@ export class CollaborationDiagnosticsModal extends Modal {
           ["本地状态", s.localError ? "加载异常，请保留数据库" : s.localReady ? "已加载（非逐笔写入确认）" : "尚未就绪"],
           ["文档初始化", s.seeded ? "已初始化" : "等待种子"],
           ["感知成员", s.members.join("、") || "暂无远端感知信息"],
+          ["重试次数（本次会话）", String(s.retryAttempts ?? 0)],
+          ["最近重试", s.lastRetry ? new Date(s.lastRetry).toLocaleTimeString() : "尚无"],
+          ["重试异常", s.retryError || "暂无"],
         ];
         for (const [name, value] of rows) {
           const row = card.createDiv({cls:"financewiki-diagnostic-row"});
@@ -74,7 +78,10 @@ export class CollaborationDiagnosticsModal extends Modal {
         try { const path = await this.exportSnapshot(room); new Notice("快照已导出：" + path, 10000); }
         catch (error) { new Notice("导出失败：" + String(error)); }
       }));
-    actions.createEl("p", {text:"重连：先恢复网络并观察数据通道；主机信令服务由计划任务管理。手动强制重连留待后续加固。不要重复执行初始化。"});
+    new Setting(actions).setName("重新发现设备")
+      .setDesc("网络恢复后自动重试；此按钮仅用于提前尝试，不会删除本地状态或重建协同文档。")
+      .addButton(b => b.setButtonText("重新连接").onClick(() => this.reconnect()));
+    actions.createEl("p", {text:"主机信令服务由计划任务管理。不要重复执行初始化；网络不可达时重试无法替代网络修复。"});
   }
 
   onClose(): void {

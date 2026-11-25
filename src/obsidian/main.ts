@@ -69,6 +69,11 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
     });
     this.addRibbonIcon("network", "FinanceWiki 协同管理", () => this.openDiagnostics());
     this.registerInterval(window.setInterval(() => this.refreshStatusBar(), 1000));
+    this.registerInterval(window.setInterval(() => this.recoverConnections(), 1000));
+    this.registerDomEvent(window, "online", () => this.recoverConnections(true));
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.visibilityState === "visible") this.recoverConnections(true);
+    });
 
     this.registerEditorExtension([
       this.bindingCompartment.of(LOCKED_EDITOR),
@@ -90,6 +95,11 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       id: "show-collaboration-status",
       name: "打开协同管理与诊断",
       callback: () => this.openDiagnostics(),
+    });
+    this.addCommand({
+      id: "retry-collaboration-connection",
+      name: "重新发现协同设备",
+      callback: () => this.requestReconnect(),
     });
 
     this.registerEvent(
@@ -121,8 +131,30 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
     this.diagnosticsModal?.close();
     this.diagnosticsModal = new CollaborationDiagnosticsModal(
       this.app, () => this.getDiagnosticReport(), (room) => this.exportSnapshot(room),
+      () => this.requestReconnect(),
     );
     this.diagnosticsModal.open();
+  }
+
+  private recoverConnections(immediate = false): void {
+    for (const session of this.sessions.values()) {
+      if (!session.localError && session.persistence.synced) {
+        void session.connection?.tick(navigator.onLine, immediate);
+      }
+    }
+  }
+
+  private requestReconnect(): void {
+    if (!this.sessions.size) {
+      new Notice("请先打开协同测试笔记。");
+      return;
+    }
+    if (!navigator.onLine) {
+      new Notice("设备当前离线，网络恢复后会自动尝试。");
+      return;
+    }
+    this.recoverConnections(true);
+    new Notice("已请求重新发现设备；不会清除本地数据或断开健康通道。");
   }
 
   private getDiagnosticReport(): DiagnosticReport {

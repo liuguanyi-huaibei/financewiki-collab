@@ -1,3 +1,9 @@
+# v0.2.3 实验版：自动重连加固
+
+保留插件 ID、Room ID、IndexedDB 名称和原有配置。对已经建立的测试文档会话增加网络恢复/窗口恢复监听、退避重试（1 秒至 30 秒）、房间重新订阅与广播、超时建连清理、手动重试入口及诊断。复用 y-webrtc 10.3.0 Provider 与 Y.Doc；不主动中断健康数据通道。加密房间使用原有信令编码格式。新增双端离线数据库重启合并测试。
+
+升级与实机回归步骤见 [PC2-TEST.md](PC2-TEST.md)。本版本不包含完整多文档 Session Manager、快照恢复或全知识库自动同步；仍需要双端实际重连验收。
+
 # FinanceWiki Collaboration / FinanceWiki 团队协同
 
 中文版 Obsidian 小团队实时协同插件，使用 Yjs CRDT、WebRTC 和 IndexedDB。当前为 **0.2.2 实验测试版**，仅用于指定目录中的无 YAML frontmatter 的 Markdown 测试笔记，不是完整 Vault 同步工具。

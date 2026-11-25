@@ -6,6 +6,7 @@ import {
 } from "../index.js";
 import { createIndexedDbName } from "./room-id.js";
 import type { CollaborationSettings } from "./settings.js";
+import { ConnectionManager } from "./connection-manager.js";
 
 export const SEED_ORIGIN = Symbol("financewiki:initial-seed");
 
@@ -20,6 +21,7 @@ export interface CollaborationSession {
   searchingForPeers: boolean;
   synced: boolean;
   localError?: boolean;
+  connection?: ConnectionManager;
 }
 
 export function createCollaborationSession(
@@ -59,6 +61,7 @@ export function createCollaborationSession(
     peerIds: new Set<string>(),
     searchingForPeers: false,
     synced: false,
+    connection: new ConnectionManager(provider),
   };
 }
 
@@ -90,6 +93,9 @@ export function seedSessionFromText(
 export async function destroyCollaborationSession(
   session: CollaborationSession,
 ): Promise<void> {
+  session.connection?.stop();
+  // Explicit disconnect removes this provider from shared signaling sockets.
+  session.provider.disconnect();
   session.provider.destroy();
   await session.persistence.destroy();
   session.doc.destroy();

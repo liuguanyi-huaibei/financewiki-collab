@@ -12,6 +12,9 @@ export interface SessionHealth {
   syncedPeers: number;
   localPeers: number;
   members: string[];
+  retryAttempts?: number;
+  lastRetry?: number | null;
+  retryError?: string | null;
 }
 
 // y-webrtc 10.3.0 exposes these typed Room fields. Its provider.connected
@@ -38,6 +41,9 @@ export function inspectSession(session: CollaborationSession): SessionHealth {
     syncedPeers: connected.filter((peer) => peer.synced).length,
     localPeers: provider.room?.bcConns.size ?? 0,
     members,
+    retryAttempts: session.connection?.attempts,
+    lastRetry: session.connection?.lastAttempt,
+    retryError: session.connection?.lastError,
   };
 }
 
