@@ -1,0 +1,14 @@
+.financewiki-collab-status {
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.financewiki-settings h3, .financewiki-dashboard h3 { margin-top: 1.3em; }
+.financewiki-session-card { padding: 12px; margin: 10px 0; border: 1px solid var(--background-modifier-border); border-radius: 8px; overflow-wrap: anywhere; }
+.financewiki-session-status { font-weight: 600; }
+.financewiki-diagnostic-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-top: 1px solid var(--background-modifier-border); }
+.financewiki-diagnostic-row span:last-child { text-align: right; }
+
+.financewiki-invalid-setting {
+  border-color: var(--color-red) !important;
+}

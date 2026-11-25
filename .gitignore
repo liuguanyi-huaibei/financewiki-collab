@@ -1,0 +1,11 @@
+node_modules/
+dist/
+runtime/
+coverage/
+*.log
+*.zip
+.env
+.env.*
+data.json
+.obsidian/
+backups/
