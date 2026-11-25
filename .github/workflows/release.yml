@@ -1,0 +1,30 @@
+name: Publish plugin test release
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check tag matches plugin version
+        run: node -e 'const m=require("./manifest.json"); const p=require("./package.json"); if(m.version!==process.env.GITHUB_REF_NAME || m.version!==p.version) process.exit(1)'
+      - run: npm ci
+      - run: npm run validate
+      - run: npm run test:signaling
+      - name: Publish tested assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/main.js dist/manifest.json dist/styles.css LICENSE --verify-tag --prerelease --title "FinanceWiki Collaboration $GITHUB_REF_NAME (test)" --notes "Experimental Chinese-language desktop plugin. Use a separate test vault. Supports plain Markdown without YAML in the configured folder. Back up local data before upgrading. Not reviewed by the Obsidian community."
