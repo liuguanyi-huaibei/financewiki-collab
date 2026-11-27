@@ -29,6 +29,7 @@ import {
   seedSessionFromText,
   type CollaborationSession,
 } from "./session.js";
+import { SessionManager, type SessionLease } from "./session-manager.js";
 
 const LOCKED_EDITOR = [
   EditorState.readOnly.of(true),
@@ -44,7 +45,7 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
   private runtimeSettings: CollaborationSettings = { ...DEFAULT_SETTINGS };
   private diagnosticsModal: CollaborationDiagnosticsModal | null = null;
 
-  private readonly sessions = new Map<string, CollaborationSession>();
+  private sessionManager: SessionManager<CollaborationSession> | null = null;
   private readonly editorViews = new Map<string, Set<EditorView>>();
   private readonly bindingCompartment = new Compartment();
   private statusBarItem!: HTMLElement;
@@ -54,6 +55,14 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       (await this.loadData()) as Partial<CollaborationSettings> | null,
     );
     this.runtimeSettings = {...this.settings, signalingServers: [...this.settings.signalingServers]};
+    this.sessionManager = new SessionManager({
+      create: (roomId) => this.createManagedSession(roomId),
+      destroy: destroyCollaborationSession,
+      idleTimeoutMs: 30_000,
+      onDestroyError: (roomId, error) => {
+        console.error("FinanceWiki session cleanup failed:", roomId, error);
+      },
+    });
 
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass("financewiki-collab-status");
@@ -115,10 +124,9 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
 
   onunload(): void {
     this.diagnosticsModal?.close();
-    for (const session of this.sessions.values()) {
-      void destroyCollaborationSession(session);
-    }
-    this.sessions.clear();
+    void this.sessionManager?.closeAll().catch((error: unknown) => {
+      console.error("FinanceWiki failed to close all sessions:", error);
+    });
     this.editorViews.clear();
   }
 
@@ -137,7 +145,7 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
   }
 
   private recoverConnections(immediate = false): void {
-    for (const session of this.sessions.values()) {
+    for (const session of this.sessionManager?.list() ?? []) {
       if (!session.localError && session.persistence.synced) {
         void session.connection?.tick(navigator.onLine, immediate);
       }
@@ -145,7 +153,7 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
   }
 
   private requestReconnect(): void {
-    if (!this.sessions.size) {
+    if (!(this.sessionManager?.list().length)) {
       new Notice("请先打开协同测试笔记。");
       return;
     }
@@ -169,12 +177,18 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       device: this.runtimeSettings.userName,
       activeRoom,
       configuredServers: [...this.runtimeSettings.signalingServers],
-      sessions: [...this.sessions.values()].map(inspectSession),
+      sessions: (this.sessionManager?.list() ?? []).map((session) =>
+        inspectSession(
+          session,
+          this.sessionManager?.getLeaseCount(session.roomId) ?? 0,
+          this.sessionManager?.getState(session.roomId) ?? "missing",
+        ),
+      ),
     };
   }
 
   private async exportSnapshot(roomId: string): Promise<string> {
-    const session = this.sessions.get(roomId);
+    const session = this.sessionManager?.get(roomId);
     if (!session || !session.persistence.synced || !isSessionSeeded(session)) {
       throw new Error("文档未初始化或本地状态尚未加载");
     }
@@ -203,6 +217,7 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       class {
         private file: TFile | null = null;
         private session: CollaborationSession | null = null;
+        private lease: SessionLease<CollaborationSession> | null = null;
         private metaObserver:
           | ((event: Y.YMapEvent<unknown>, transaction: Y.Transaction) => void)
           | null = null;
@@ -211,17 +226,17 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
         private attempts = 0;
 
         constructor(private readonly view: EditorView) {
-          queueMicrotask(() => this.initialize());
+          queueMicrotask(() => void this.initialize());
         }
 
-        private initialize(): void {
+        private async initialize(): Promise<void> {
           if (this.destroyed) return;
 
           const file = plugin.resolveFileForEditorView(this.view);
           if (!file) {
             this.attempts += 1;
             if (this.attempts < 10) {
-              window.setTimeout(() => this.initialize(), 50);
+              window.setTimeout(() => void this.initialize(), 50);
             } else {
               this.setEditable();
             }
@@ -246,7 +261,25 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
           }
 
           plugin.registerEditorView(file.path, this.view);
-          this.session = plugin.getOrCreateSession(file);
+          try {
+            const roomId = createRoomId(plugin.runtimeSettings.workspaceId, file.path);
+            this.lease = await plugin.sessionManager!.acquire(roomId);
+            if (this.destroyed) {
+              await this.lease.release();
+              this.lease = null;
+              return;
+            }
+            this.session = this.lease.session;
+          } catch (error) {
+            if (!this.destroyed) {
+              new Notice(
+                "FinanceWiki 协同会话创建失败：" +
+                  (error instanceof Error ? error.message : String(error)),
+              );
+              plugin.refreshStatusBar();
+            }
+            return;
+          }
           this.metaObserver = () => this.activateWhenSeeded();
           this.session.meta.observe(this.metaObserver);
 
@@ -318,6 +351,13 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
           if (this.file) {
             plugin.unregisterEditorView(this.file.path, this.view);
           }
+          const lease = this.lease;
+          this.lease = null;
+          if (lease) {
+            void lease.release().catch((error: unknown) => {
+              console.error("FinanceWiki session lease release failed:", error);
+            });
+          }
         }
       },
     );
@@ -355,13 +395,8 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
     if (views.size === 0) this.editorViews.delete(filePath);
   }
 
-  private getOrCreateSession(file: TFile): CollaborationSession {
-    const roomId = createRoomId(this.runtimeSettings.workspaceId, file.path);
-    const existing = this.sessions.get(roomId);
-    if (existing) return existing;
-
+  private createManagedSession(roomId: string): CollaborationSession {
     const session = createCollaborationSession(roomId, this.runtimeSettings);
-    this.sessions.set(roomId, session);
 
     session.provider.on("status", ({ connected }) => {
       session.searchingForPeers = connected;
@@ -417,8 +452,12 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       return;
     }
 
-    const session = this.getOrCreateSession(file);
+    const roomId = createRoomId(this.runtimeSettings.workspaceId, file.path);
+    let lease: SessionLease<CollaborationSession> | null = null;
+    let session: CollaborationSession | null = null;
     try {
+      lease = await this.sessionManager!.acquire(roomId);
+      session = lease.session;
       await session.persistence.whenSynced;
       seedSessionFromText(session, initialText);
       new Notice(
@@ -426,9 +465,11 @@ export default class FinanceWikiCollaborationPlugin extends Plugin {
       );
     } catch (error) {
       new Notice(
-        isSessionSeeded(session) ? "文档已经初始化，请勿重复执行。"
+        session && isSessionSeeded(session) ? "文档已经初始化，请勿重复执行。"
           : "初始化失败，请保留现有内容并查看诊断：" + String(error),
       );
+    } finally {
+      if (lease) await lease.release();
     }
     this.refreshStatusBar();
   }

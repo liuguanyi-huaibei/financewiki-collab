@@ -42,6 +42,8 @@ export class CollaborationDiagnosticsModal extends Modal {
           ["初始同步握手", s.syncedPeers + "/" + s.connectedPeers + " 已完成"],
           ["本机标签页", String(s.localPeers)],
           ["本地状态", s.localError ? "加载异常，请保留数据库" : s.localReady ? "已加载（非逐笔写入确认）" : "尚未就绪"],
+          ["会话生命周期", s.lifecycle ?? "未知"],
+          ["编辑器引用数", String(s.editorLeases ?? 0)],
           ["文档初始化", s.seeded ? "已初始化" : "等待种子"],
           ["感知成员", s.members.join("、") || "暂无远端感知信息"],
           ["重试次数（本次会话）", String(s.retryAttempts ?? 0)],

@@ -1,4 +1,5 @@
 import type { CollaborationSession } from "./session.js";
+import type { SessionManagerState } from "./session-manager.js";
 
 export interface SessionHealth {
   roomId: string;
@@ -15,11 +16,17 @@ export interface SessionHealth {
   retryAttempts?: number;
   lastRetry?: number | null;
   retryError?: string | null;
+  editorLeases?: number;
+  lifecycle?: SessionManagerState;
 }
 
 // y-webrtc 10.3.0 exposes these typed Room fields. Its provider.connected
 // indicates discovery intent, not a live socket or DataChannel.
-export function inspectSession(session: CollaborationSession): SessionHealth {
+export function inspectSession(
+  session: CollaborationSession,
+  editorLeases = 0,
+  lifecycle: SessionManagerState = "active",
+): SessionHealth {
   const provider = session.provider;
   const peers = [...(provider.room?.webrtcConns.values() ?? [])];
   const connected = peers.filter((peer) => peer.connected && !peer.closed);
@@ -44,6 +51,8 @@ export function inspectSession(session: CollaborationSession): SessionHealth {
     retryAttempts: session.connection?.attempts,
     lastRetry: session.connection?.lastAttempt,
     retryError: session.connection?.lastError,
+    editorLeases,
+    lifecycle,
   };
 }
 
