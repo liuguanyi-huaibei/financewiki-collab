@@ -1,6 +1,6 @@
 {
   "name": "@financewiki/obsidian-collab",
-  "version": "0.2.3",
+  "version": "0.3.0-dev.1",
   "private": true,
   "type": "module",
   "description": "FinanceWiki Yjs collaboration engine and Obsidian plugin",
